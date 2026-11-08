@@ -298,7 +298,6 @@ export class Bridge {
         hw_id_valid: isValidHwId(hwId),
         raw: payload.toString("utf8", 0, MAX_QUARANTINE_RAW).replaceAll("\0", ""),
         size: payload.length,
-        received_at: new Date().toISOString(),
       });
       this.dbOk = true;
     } catch (err) {
