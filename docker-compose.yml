@@ -3,6 +3,7 @@ services:
   bridge:
     build: .
     restart: unless-stopped
+    scale: ${BRIDGE_SCALE:-1}
     environment:
       - MQTT_URL=${MQTT_URL}
       - MQTT_USERNAME=${MQTT_USERNAME}
