@@ -41,7 +41,7 @@ describe("most", () => {
     assert.equal(db.ingestCalls, 2);
   });
 
-  it("ta sama para (boot, seq) z inną treścią: brak ack, rekord bez zmian", async () => {
+  it("ta sama para (boot, seq) z inną treścią: ack po kwarantannie, rekord bez zmian", async () => {
     const bridge = await rig.bridge(db);
     const device = await rig.device([ACK]);
     const acks = collect(device);
@@ -49,21 +49,20 @@ describe("most", () => {
     await waitFor(() => acks.length === 1, "ack");
     await device.publishAsync(EVT, envelope(1, ssp(2)), { qos: 1 });
     await waitFor(() => bridge.metrics.get('bridge_events_total{type="e-print",result="conflict"}') === 1, "konflikt");
-    await settle();
-    assert.equal(acks.length, 1);
+    await waitFor(() => acks.length === 2, "ack konfliktu");
     assert.equal(db.events.get(`${HW}|a1b2c3d4|1`)?.payload.data && (db.events.get(`${HW}|a1b2c3d4|1`)!.payload.data as any).nr, 1);
   });
 
-  for (const [name, payload, reason] of [
+  for (const [name, payload, reason, expectedAcks = 0] of [
     ["niepoprawny JSON", "{nie json", "invalid_json"],
     ["brak seq", JSON.stringify({ v: 1, boot: "a1b2c3d4", ts: null, ts_ok: false, up_ms: 1, data: {} }), "bad_seq"],
     ["zły boot", envelope(1, ssp(), { boot: "XYZ" }), "bad_boot"],
     ["ts_ok bez czasu", envelope(1, ssp(), { ts: null }), "bad_ts"],
     ["za długa treść", envelope(1, { ...ssp(), x: "a".repeat(1100) }), "too_large"],
     ["znak NUL", envelope(1, { ...ssp(), x: "\0" }), "nul_character"],
-    ["zły schemat modułu", envelope(1, { protokol: "bosch-ssp" }), "ssp_bad_rodzaj"],
-    ["nieobsługiwana wersja", envelope(1, ssp(), { v: 9 }), "unsupported_version"],
-  ] as const) {
+    ["zły schemat modułu", envelope(1, { protokol: "bosch-ssp" }), "ssp_bad_rodzaj", 1],
+    ["nieobsługiwana wersja", envelope(1, ssp(), { v: 9 }), "unsupported_version", 1],
+  ] as ReadonlyArray<readonly [string, string, string, number?]>) {
     it(`kwarantanna: ${name}`, async () => {
       await rig.bridge(db);
       const device = await rig.device([ACK]);
@@ -73,7 +72,7 @@ describe("most", () => {
       assert.equal(db.quarantined[0]!.reason, reason);
       assert.equal(db.quarantined[0]!.topic, EVT);
       await settle();
-      assert.equal(acks.length, 0);
+      assert.equal(acks.length, expectedAcks);
       assert.equal(db.events.size, 0);
     });
   }
@@ -87,15 +86,25 @@ describe("most", () => {
     assert.deepEqual(db.quarantined.map((q) => q.reason).sort(), ["bad_topic", "unknown_event"]);
   });
 
-  it("niezgodność typu z bazą: brak ack", async () => {
+  it("awaria bazy przy zapisie do kwarantanny: brak ack", async () => {
+    await rig.bridge(db);
+    const device = await rig.device([ACK]);
+    const acks = collect(device);
+    db.failing = true;
+    await device.publishAsync(EVT, envelope(1, { protokol: "bosch-ssp" }), { qos: 1 });
+    await settle();
+    assert.equal(acks.length, 0);
+    assert.equal(db.quarantined.length, 0);
+  });
+
+  it("niezgodność typu z bazą: ack po kwarantannie", async () => {
     await rig.bridge(db, { modules: ["e-print", "e-gate"] });
     const device = await rig.device([`e-gate/${HW}/v1/ack`]);
     const acks = collect(device);
     await device.publishAsync(`e-gate/${HW}/v1/evt/input`, envelope(1, {}), { qos: 1 });
     await waitFor(() => db.quarantined.length === 1, "kwarantanna");
     assert.equal(db.quarantined[0]!.reason, "type_mismatch");
-    await settle();
-    assert.equal(acks.length, 0);
+    await waitFor(() => acks.length === 1, "ack");
   });
 
   it("awaria bazy: brak ack, a po naprawie ponowienie jest zapisane", async () => {

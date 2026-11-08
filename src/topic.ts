@@ -1,6 +1,6 @@
 // Tematy wg docs/PROTOKOL.md, rozdział 3: <typ>/<hw_id>/v1/<kanał>[/<nazwa>...]
 
-const HW_ID = /^[0-9A-HJKMNP-TV-Z]{10}[0-9A-Z*~$=]$/;
+const HW_ID = /^[0-9A-HJKMNP-TV-Z]{11}$/;
 
 export type Channel =
   | { kind: "status" | "info" | "res" }

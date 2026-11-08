@@ -201,7 +201,10 @@ export class Bridge {
       case "evt": {
         const envelope = validateEnvelope(body.value);
         if (!envelope.ok) return this.quarantine(topic, payload, envelope.reason);
-        if (!module.versions.includes(envelope.value.v)) return this.quarantine(topic, payload, "unsupported_version");
+        if (!module.versions.includes(envelope.value.v)) {
+          if (channel.kind === "evt") return this.quarantineAndAck(topic, payload, "unsupported_version", parsed, envelope.value);
+          return this.quarantine(topic, payload, "unsupported_version");
+        }
         if (channel.kind === "tele") return this.handleTelemetry(topic, payload, parsed, module, channel.name, envelope.value);
         return this.handleEvent(topic, payload, parsed, module, channel.name, envelope.value);
       }
@@ -219,9 +222,9 @@ export class Bridge {
     envelope: Envelope,
   ): Promise<void> {
     const validate = module.events[name];
-    if (!validate) return this.quarantine(topic, payload, "unknown_event");
+    if (!validate) return this.quarantineAndAck(topic, payload, "unknown_event", parsed, envelope);
     const invalid = validate(envelope.data);
-    if (invalid) return this.quarantine(topic, payload, invalid);
+    if (invalid) return this.quarantineAndAck(topic, payload, invalid, parsed, envelope);
 
     let result;
     try {
@@ -243,11 +246,12 @@ export class Bridge {
       return;
     }
     this.metrics.inc("bridge_events_total", { type: parsed.type, result });
-    if (result === "stored" || result === "duplicate") {
-      await this.sendAck(parsed, envelope);
-    } else {
-      log("warn", "event_not_acked", { topic, boot: envelope.boot, seq: envelope.seq, result });
+    // Każdy wynik z bazy oznacza trwały zapis (także conflict i quarantined trafiają do iot.quarantine).
+    // Bez ack takie zdarzenie blokowałoby okno urządzenia; ack wstrzymuje tylko awaria bazy (catch wyżej).
+    if (result !== "stored" && result !== "duplicate") {
+      log("warn", "event_quarantined_by_db", { topic, boot: envelope.boot, seq: envelope.seq, result });
     }
+    await this.sendAck(parsed, envelope);
   }
 
   private async sendAck(parsed: ParsedTopic, envelope: Envelope): Promise<void> {
@@ -288,6 +292,21 @@ export class Bridge {
   }
 
   private async quarantine(topic: string, payload: Buffer, reason: string): Promise<void> {
+    await this.saveQuarantine(topic, payload, reason);
+  }
+
+  /** Zdarzenie z poprawną kopertą: po zapisie w kwarantannie jest bezpieczne, więc dostaje ack. */
+  private async quarantineAndAck(
+    topic: string,
+    payload: Buffer,
+    reason: string,
+    parsed: ParsedTopic,
+    envelope: Envelope,
+  ): Promise<void> {
+    if (await this.saveQuarantine(topic, payload, reason)) await this.sendAck(parsed, envelope);
+  }
+
+  private async saveQuarantine(topic: string, payload: Buffer, reason: string): Promise<boolean> {
     const [type = "", hwId = ""] = topic.split("/");
     this.metrics.inc("bridge_quarantine_total", { reason });
     log("warn", "quarantine", { topic, reason });
@@ -300,10 +319,12 @@ export class Bridge {
         size: payload.length,
       });
       this.dbOk = true;
+      return true;
     } catch (err) {
       this.dbOk = false;
       this.metrics.inc("bridge_quarantine_errors_total");
       log("error", "quarantine_failed", { topic, err: errorText(err) });
+      return false;
     }
   }
 

@@ -19,20 +19,20 @@ Wymiana zepsutej drukarki ma zachować historię, dlatego rozdzielamy dwa pojęc
 
 | Pojęcie | Znaczenie | Przykład | Trwałość |
 |---|---|---|---|
-| **Egzemplarz** (`hw_id`) | fizyczna płytka; logowanie do brokera, tematy | `7K3M-9QXT-4AB` | na całe życie płytki |
+| **Egzemplarz** (`hw_id`) | fizyczna płytka; logowanie do brokera, tematy | `7K3M-9QXT-4A4` | na całe życie płytki |
 | **Punkt** (`point_id`, UUID) | logiczna rola w obiekcie: „Drukarka centrali, Galeria Północ”; do niego należy historia | wiersz `printers` / `gates` / `meters` | niezależny od sprzętu |
 | **Powiązanie** (`device_bindings`) | który egzemplarz obsługuje który punkt, od kiedy do kiedy | `valid_from`, `valid_to` | pełna historia zmian |
 
-**Format numeru seryjnego `hw_id`:** 48 bitów adresu MAC (eFuse) zapisane w Crockford Base32 (10 znaków) + 1 znak kontrolny (mod 37).
+**Format numeru seryjnego `hw_id`:** 48 bitów adresu MAC (eFuse) zapisane w Crockford Base32 (10 znaków) + 1 znak kontrolny (Luhn mod 32, ten sam alfabet: tylko cyfry i litery).
 - Numer jest **programowany w urządzeniu** (NVS) przy produkcji, razem z typem i hasłem. Narzędzie produkcyjne wylicza go z MAC, więc jest niepowtarzalny bez centralnej puli, a znak kontrolny wyłapuje literówkę przy wpisywaniu.
 - Urządzenie bez zaprogramowanego numeru NIE łączy się z brokerem produkcyjnym.
-- W tematach i bazie: wielkie litery, bez myślników (`7K3M9QXT4AB`). Na etykiecie i w aplikacji: grupy z myślnikami i kod QR. Aplikacja przy wpisywaniu zamienia `O→0`, `I/L→1`, małe litery na wielkie i usuwa myślniki.
+- W tematach i bazie: wielkie litery, bez myślników (`7K3M9QXT4A4`). Na etykiecie i w aplikacji: grupy z myślnikami i kod QR. Aplikacja przy wpisywaniu zamienia `O→0`, `I/L→1`, małe litery na wielkie i usuwa myślniki.
 - Urządzenie bez własnego MAC-a dostaje numer z rejestru z ustawionym bitem „locally administered”.
 - Identyfikator nie jest sekretem. Sekretem jest hasło urządzenia (rozdział 8).
 
 **Dotychczasowy numer** (`TS-RS485-188B0E9283A4`, `shellyplus1-…`) zostaje w polu `vendor_sn` jako informacja.
 
-**Wymiana urządzenia** (funkcja `replace_device(point_id, nowy_hw_id)`, wywoływana w aplikacji):
+**Wymiana urządzenia** (funkcja `replace_device(point_id, nowy_hw_id)`, wywoływana przez serwer; z aplikacji po dodaniu wywołania z kontrolą uprawnień w module drukarek):
 1. Zamyka powiązanie starego egzemplarza (`valid_to = now()`) i otwiera powiązanie nowego.
 2. Unieważnia dane logowania starego egzemplarza, gdy wymiana jest trwała.
 3. Historia zostaje przy punkcie, a każdy wpis pamięta, z którego egzemplarza pochodzi.
@@ -42,7 +42,7 @@ Wymiana zepsutej drukarki ma zachować historię, dlatego rozdzielamy dwa pojęc
 
 ## 3. Drzewo tematów
 
-Prefiks: `<typ>/<hw_id>/v1/`, np. `e-print/7K3M9QXT4AB/v1/evt/ssp`
+Prefiks: `<typ>/<hw_id>/v1/`, np. `e-print/7K3M9QXT4A4/v1/evt/ssp`
 
 | Typ | Urządzenia |
 |---|---|
@@ -201,7 +201,7 @@ Dane logowania: hasło generuje narzędzie produkcyjne i zapisuje w NVS, w bazie
 
 ## 10. Kody i wersjonowanie
 
-Kody błędów w `res.code` i błędy walidacji po stronie mostu są rejestrowane w `technical_events`. Wiadomość niepoprawna trafia do kwarantanny (nie jest gubiona) i nie dostaje `ack`.
+Kody błędów w `res.code` i błędy walidacji po stronie mostu są rejestrowane w `technical_events`. Wiadomość niepoprawna trafia do kwarantanny (nie jest gubiona). Zdarzenie `evt` z poprawną kopertą (`boot`, `seq`) dostaje `ack` po zapisie w kwarantannie; `ack` wstrzymuje tylko awaria bazy. Bez poprawnej koperty `ack` nie da się zaadresować.
 Przejście na `v2`: most obsługuje jednocześnie `v1` i `v2` do czasu aktualizacji urządzeń.
 
 ## 11. Kontrakt most ↔ baza
@@ -214,5 +214,5 @@ Most woła wyłącznie te funkcje (rola `iot_bridge`). Migracje i kod mostu MUSZ
 | `iot.ingest_state(p_type text, p_hw_id text, p_kind text, p_payload jsonb)` | `void` | `status`, `info`, `tele/sys`; idempotentne |
 | `iot.claim_commands(p_types text[], p_limit int)` | wiersze `device_commands` | pobranie poleceń przez `FOR UPDATE SKIP LOCKED` |
 | `iot.finish_command(p_cid text, p_status text, p_result jsonb)` | `void` | wynik: `done`, `failed`, `expired`, `timeout` |
-| `iot.replace_device(p_point_id uuid, p_new_hw_id text)` | `void` | wymiana egzemplarza z rozdziału 2, wywoływana przez aplikację |
+| `iot.replace_device(p_point_id uuid, p_new_hw_id text)` | `void` | wymiana egzemplarza z rozdziału 2; zawsze unieważnia hasło starego; dziś tylko serwer, wywołanie z aplikacji (z kontrolą uprawnień) powstanie z modułem drukarek |
 
