@@ -28,7 +28,11 @@ MQTT_URL=mqtts://host:port MODULES=e-print DATABASE_URL=postgres://... npm start
 | `SHUTDOWN_GRACE_MS` | 10000 | czas na dokończenie zapisów po SIGTERM |
 | `FINISH_RETRY_MS` | 1000 | przerwa między próbami zapisu wyniku polecenia |
 
-## Zależności od bazy (migracja `20261108000017_iot.sql` w fireprint)
+## Skalowanie na Coolify
+
+Coolify nadaje kontenerom stałą nazwę (`container_name`), więc `scale` i `deploy.replicas` w compose kończą się błędem wdrożenia. Kolejna kopia to osobna usługa w `docker-compose.yml` (np. `bridge-2`, z tymi samymi zmiennymi) albo osobna aplikacja Coolify. Podział ruchu daje `$share`, identyfikator klienta bierze się z nazwy hosta.
+
+## Zależności od bazy (migracja `20261108000019_iot.sql` w fireprint)
 
 1. Rozdział 11 nie ma funkcji kwarantanny, więc wiadomość odrzuconą przez most (np. bez `boot` lub `seq`) przekazuje `iot.ingest_state(..., 'quarantine', payload)`. Baza zapisuje ją w `iot.quarantine` z powodem `bad_kind` (lub `unknown_device`), a właściwy powód jest w `payload.reason`.
 2. `iot.claim_commands` zwraca wiersze `iot.device_commands` (`cid`, `type`, `hw_id`, `name`, `payload`, `expires_at`). Polecenie bez `expires_at` nie jest wysyłane.
