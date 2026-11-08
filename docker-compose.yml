@@ -3,7 +3,18 @@ services:
   bridge:
     build: .
     restart: unless-stopped
-    scale: ${BRIDGE_SCALE:-1}
+    environment:
+      - MQTT_URL=${MQTT_URL}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_CA_FILE=/app/certs/zdalio-ca.crt
+      - DATABASE_URL=${DATABASE_URL}
+      - MODULES=${MODULES}
+    networks:
+      - supabase
+  bridge-2:
+    build: .
+    restart: unless-stopped
     environment:
       - MQTT_URL=${MQTT_URL}
       - MQTT_USERNAME=${MQTT_USERNAME}
