@@ -1,0 +1,19 @@
+# Coolify dev: most dołącza do wewnętrznej sieci Supabase, bo porty bazy są zamknięte z zewnątrz.
+services:
+  bridge:
+    build: .
+    restart: unless-stopped
+    environment:
+      - MQTT_URL=${MQTT_URL}
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - MQTT_CA_FILE=/app/certs/zdalio-ca.crt
+      - DATABASE_URL=${DATABASE_URL}
+      - MODULES=${MODULES}
+    networks:
+      - supabase
+
+networks:
+  supabase:
+    external: true
+    name: 6octbaxst8cnlfdf6pt7zhvt
