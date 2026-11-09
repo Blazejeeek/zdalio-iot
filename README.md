@@ -2,7 +2,7 @@
 
 Serwer pośredniczący między urządzeniami IoT a bazą. Kontrakt: [docs/PROTOKOL.md](docs/PROTOKOL.md).
 
-Instancja obsługuje typy z `MODULES`, a kolejne instancje dzielą ruch przez `$share/<typ>/<typ>/+/v1/#`. Potwierdzenie `ack` idzie dopiero po zapisie w bazie. Wiadomości niepoprawne trafiają do kwarantanny i nie dostają `ack`. Polecenia są wysyłane raz, z `exp`; brak wyniku kończy się statusem `timeout`, bez ponawiania.
+Instancja obsługuje typy z `MODULES`, a kolejne instancje dzielą ruch przez `$share/<typ>/<typ>/+/v1/#`. Potwierdzenie `ack` idzie dopiero po zapisie w bazie. Wiadomości niepoprawne trafiają do kwarantanny; `ack` dostają tylko zdarzenia z poprawną kopertą, po zapisie w kwarantannie. Polecenia są wysyłane raz, z `exp`; brak wyniku kończy się statusem `timeout`, bez ponawiania.
 
 ## Uruchomienie
 
